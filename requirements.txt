@@ -1,0 +1,8 @@
+# requirements.txt
+flask
+opencv-python-headless
+pytesseract
+easyocr
+numpy
+Pillow
+Werkzeug

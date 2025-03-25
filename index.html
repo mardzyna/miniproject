@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document Scanner</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.1"></script>
+    <!-- Include Tesseract.js -->
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        text-align: center;
+        background-color: rgb(216, 0, 101);
+      }
+
+      h1 {
+        color: #ffffff;
+        text-shadow: #db348d 0px 0px 15px;
+      }
+      p {
+        color: #ffffff;
+      }
+      #result {
+        margin-top: 20px;
+      }
+      #processedImage {
+        max-width: 100%;
+        height: auto;
+        margin-bottom: 20px;
+        box-shadow: #ff82cd 0px 0px 30px;
+      }
+      #extractedText {
+        white-space: pre-wrap;
+        text-align: justify;
+        border: 1px solid #000000;
+        padding: 10px;
+        background-color: #f9f9f9;
+        box-shadow: #ffffff 0px 5px 50px;
+      }
+      .error {
+        color: red;
+        margin-top: 10px;
+      }
+      #loading {
+        display: none;
+        margin: 20px 0;
+        font-size: 18px;
+      }
+      .spinner {
+        border: 15px solid #db348d;
+        border-top: 10px solid #ff82cd;
+        border-radius: 60%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto;
+      }
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Document Scanner</h1>
+    <input type="file" id="imageUpload" accept="image/*" />
+
+    <div id="loading">
+      <div class="spinner"></div>
+      <p>Scanning document...</p>
+    </div>
+
+    <div id="error" class="error"></div>
+
+    <div id="result">
+      <img id="processedImage" style="display: none" />
+      <pre id="extractedText"></pre>
+    </div>
+
+    <script>
+      document
+        .getElementById("imageUpload")
+        .addEventListener("change", function (event) {
+          const file = event.target.files[0];
+          console.log("Selected file: ", file); // Log the file to confirm it's being uploaded
+
+          // Reset previous results and errors
+          document.getElementById("processedImage").style.display = "none";
+          document.getElementById("extractedText").textContent = "";
+          document.getElementById("error").textContent = "";
+
+          // Show the uploaded image immediately
+          const processedImage = document.getElementById("processedImage");
+          const reader = new FileReader();
+          reader.onloadend = function () {
+            processedImage.src = reader.result;
+            processedImage.style.display = "block"; // Show image
+          };
+          reader.readAsDataURL(file);
+
+          // Show loading spinner
+          const loadingIndicator = document.getElementById("loading");
+          loadingIndicator.style.display = "block";
+
+          // Use Tesseract.js to process the image and extract text
+          Tesseract.recognize(
+            file, // Use the file directly for OCR
+            "eng", // Language for OCR
+            {
+              logger: (m) => {
+                console.log("OCR progress: ", m); // Log OCR progress
+              },
+            }
+          )
+            .then(({ data: { text } }) => {
+              console.log("OCR result: ", text); // Log the extracted text
+              // Hide loading spinner
+              loadingIndicator.style.display = "none";
+
+              // Display the extracted text
+              document.getElementById("extractedText").textContent = text;
+            })
+            .catch((error) => {
+              // Hide loading spinner
+              loadingIndicator.style.display = "none";
+
+              console.error("Error:", error);
+              document.getElementById("error").textContent =
+                "Error processing document";
+            });
+        });
+    </script>
+  </body>
+</html>
