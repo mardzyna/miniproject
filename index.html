@@ -3,61 +3,119 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document Scanner</title>
+    <title>Advanced Document Scanner</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.1"></script>
-    <!-- Include Tesseract.js -->
     <style>
+      :root {
+        --primary-color: #db348d;
+        --secondary-color: #ff82cd;
+        --background-color: #fea8d0;
+      }
+
+      * {
+        box-sizing: border-box;
+        transition: all 0.3s ease;
+      }
+
       body {
-        font-family: Arial, sans-serif;
+        font-family: "Arial", sans-serif;
         max-width: 800px;
         margin: 0 auto;
         padding: 20px;
         text-align: center;
-        background-color: rgb(254, 168, 208);
+        background-color: var(--background-color);
+        line-height: 1.6;
+      }
+
+      .container {
+        background-color: white;
+        border-radius: 15px;
+        padding: 30px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
       }
 
       h1 {
-        color: #ffffff;
-        text-shadow: #db348d 0px 0px 15px;
+        color: var(--primary-color);
+        margin-bottom: 20px;
       }
-      p {
-        color: #ffffff;
+
+      .upload-container {
+        border: 3px dashed var(--secondary-color);
+        border-radius: 20px;
+        padding: 40px;
+        text-align: center;
+        cursor: pointer;
+        transition: background-color 0.3s;
       }
+
+      .upload-container:hover {
+        background-color: rgba(255, 130, 205, 0.1);
+      }
+
+      #imageUpload {
+        display: none;
+      }
+
+      .upload-text {
+        color: var(--primary-color);
+        font-weight: bold;
+      }
+
       #result {
-        margin-top: 20px;
+        margin-top: 30px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
       }
+
       #processedImage {
         max-width: 100%;
-        height: auto;
+        max-height: 500px;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
         margin-bottom: 20px;
-        box-shadow: #ff82cd 0px 0px 30px;
       }
+
       #extractedText {
-        white-space: pre-wrap;
-        text-align: justify;
-        border: 1px solid #000000;
-        padding: 10px;
+        width: 100%;
+        min-height: 200px;
+        border: 2px solid var(--secondary-color);
+        border-radius: 10px;
+        padding: 15px;
         background-color: #f9f9f9;
-        box-shadow: #ffffff 0px 5px 50px;
+        text-align: left;
+        overflow-y: auto;
       }
-      .error {
-        color: red;
-        margin-top: 10px;
+
+      .download-btn {
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        margin-top: 15px;
+        cursor: pointer;
       }
+
+      .download-btn:hover {
+        background-color: var(--secondary-color);
+      }
+
       #loading {
         display: none;
         margin: 20px 0;
-        font-size: 18px;
       }
+
       .spinner {
-        border: 15px solid #db348d;
-        border-top: 10px solid #ff82cd;
-        border-radius: 60%;
+        border: 4px solid var(--primary-color);
+        border-top: 4px solid var(--secondary-color);
+        border-radius: 50%;
         width: 40px;
         height: 40px;
         animation: spin 1s linear infinite;
         margin: 0 auto;
       }
+
       @keyframes spin {
         0% {
           transform: rotate(0deg);
@@ -66,76 +124,146 @@
           transform: rotate(360deg);
         }
       }
+
+      @media (max-width: 600px) {
+        .container {
+          padding: 15px;
+        }
+        .upload-container {
+          padding: 20px;
+        }
+      }
     </style>
   </head>
   <body>
-    <h1>Document Scanner</h1>
-    <input type="file" id="imageUpload" accept="image/*" />
+    <div class="container">
+      <h1>Advanced Document Scanner</h1>
 
-    <div id="loading">
-      <div class="spinner"></div>
-      <p>Scanning document...</p>
-    </div>
+      <div class="upload-container" id="dropZone">
+        <input type="file" id="imageUpload" accept="image/*" />
+        <label for="imageUpload" class="upload-text">
+          Drag and Drop or Click to Upload Document
+        </label>
+      </div>
 
-    <div id="error" class="error"></div>
+      <div id="loading">
+        <div class="spinner"></div>
+        <p>Processing document...</p>
+      </div>
 
-    <div id="result">
-      <img id="processedImage" style="display: none" />
-      <pre id="extractedText"></pre>
+      <div id="result">
+        <img id="processedImage" style="display: none" />
+        <pre
+          id="extractedText"
+          placeholder="Extracted text will appear here"
+        ></pre>
+        <button id="downloadBtn" class="download-btn" style="display: none">
+          Download Text
+        </button>
+      </div>
     </div>
 
     <script>
-      document
-        .getElementById("imageUpload")
-        .addEventListener("change", function (event) {
-          const file = event.target.files[0];
-          console.log("Selected file: ", file); // Log the file to confirm it's being uploaded
+      const dropZone = document.getElementById("dropZone");
+      const imageUpload = document.getElementById("imageUpload");
+      const processedImage = document.getElementById("processedImage");
+      const extractedText = document.getElementById("extractedText");
+      const downloadBtn = document.getElementById("downloadBtn");
+      const loadingIndicator = document.getElementById("loading");
 
-          // Reset previous results and errors
-          document.getElementById("processedImage").style.display = "none";
-          document.getElementById("extractedText").textContent = "";
-          document.getElementById("error").textContent = "";
+      // Drag and Drop functionality
+      ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+      });
 
-          // Show the uploaded image immediately
-          const processedImage = document.getElementById("processedImage");
-          const reader = new FileReader();
-          reader.onloadend = function () {
-            processedImage.src = reader.result;
-            processedImage.style.display = "block"; // Show image
-          };
-          reader.readAsDataURL(file);
+      function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
 
-          // Show loading spinner
-          const loadingIndicator = document.getElementById("loading");
-          loadingIndicator.style.display = "block";
+      ["dragenter", "dragover"].forEach((eventName) => {
+        dropZone.addEventListener(eventName, highlight, false);
+      });
 
-          // Use Tesseract.js to process the image and extract text
-          Tesseract.recognize(
-            file, // Use the file directly for OCR
-            "eng", // Language for OCR
-            {
-              logger: (m) => {
-                console.log("OCR progress: ", m); // Log OCR progress
-              },
-            }
-          )
-            .then(({ data: { text } }) => {
-              console.log("OCR result: ", text); // Log the extracted text
-              // Hide loading spinner
-              loadingIndicator.style.display = "none";
+      ["dragleave", "drop"].forEach((eventName) => {
+        dropZone.addEventListener(eventName, unhighlight, false);
+      });
 
-              // Display the extracted text
-              document.getElementById("extractedText").textContent = text;
-            })
-            .catch((error) => {
-              // Hide loading spinner
-              loadingIndicator.style.display = "none";
+      function highlight() {
+        dropZone.style.backgroundColor = "rgba(255,130,205,0.3)";
+      }
 
-              console.error("Error:", error);
-              document.getElementById("error").textContent =
-                "Error processing document";
-            });
+      function unhighlight() {
+        dropZone.style.backgroundColor = "";
+      }
+
+      dropZone.addEventListener("drop", handleDrop, false);
+
+      function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        handleFiles(files);
+      }
+
+      // Click to upload
+      imageUpload.addEventListener("change", function (event) {
+        handleFiles(event.target.files);
+      });
+
+      function handleFiles(files) {
+        if (files.length > 0) {
+          const file = files[0];
+          processDocument(file);
+        }
+      }
+
+      function processDocument(file) {
+        // Reset previous results
+        processedImage.style.display = "none";
+        extractedText.textContent = "";
+        downloadBtn.style.display = "none";
+
+        // Show uploaded image
+        const reader = new FileReader();
+        reader.onloadend = function () {
+          processedImage.src = reader.result;
+          processedImage.style.display = "block";
+        };
+        reader.readAsDataURL(file);
+
+        // Show loading
+        loadingIndicator.style.display = "block";
+
+        // Process with Tesseract
+        Tesseract.recognize(file, "eng", {
+          logger: (m) => console.log("OCR progress:", m),
+        })
+          .then(({ data: { text } }) => {
+            loadingIndicator.style.display = "none";
+            extractedText.textContent = text;
+
+            // Enable download button
+            downloadBtn.style.display = "block";
+          })
+          .catch((error) => {
+            loadingIndicator.style.display = "none";
+            extractedText.textContent =
+              "Error processing document: " + error.message;
+          });
+      }
+
+      // Download functionality
+      downloadBtn.addEventListener("click", () => {
+        const blob = new Blob([extractedText.textContent], {
+          type: "text/plain",
         });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "extracted_text.txt";
+        a.click();
+        URL.revokeObjectURL(url);
+      });
     </script>
   </body>
 </html>
