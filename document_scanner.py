@@ -6,162 +6,143 @@ from flask import Flask, request, jsonify, render_template
 import base64
 import os
 from werkzeug.utils import secure_filename
+import io
+from PIL import Image
+import time
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Explicitly set Tesseract path
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-# Initialize Flask app BEFORE creating the scanner
+# Initialize Flask app
 app = Flask(__name__)
 
-class UniversalDocumentScanner:
+# Configure upload and cache directories
+UPLOAD_FOLDER = 'uploads'
+CACHE_FOLDER = 'cache'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(CACHE_FOLDER, exist_ok=True)
+
+class OptimizedDocumentScanner:
     def __init__(self):
         """
-        Initialize scanner with advanced detection capabilities
+        Initialize scanner with advanced detection and optimization capabilities
         """
         self.reader = easyocr.Reader(['en'])
+        self.cache = {}  # In-memory cache
+        self.max_cache_size = 50  # Limit cache size
+    
+    def compress_image(self, image_path, max_size=(1024, 1024)):
+        """
+        Compress and resize image for efficient processing
+        """
+        try:
+            with Image.open(image_path) as img:
+                # Resize maintaining aspect ratio
+                img.thumbnail(max_size, Image.LANCZOS)
+                
+                # Create compressed file path
+                compressed_path = os.path.join(CACHE_FOLDER, f"compressed_{os.path.basename(image_path)}")
+                img.save(compressed_path, optimize=True, quality=85)
+                
+                return compressed_path
+        except Exception as e:
+            logger.error(f"Image compression error: {e}")
+            return image_path
 
     def preprocess_image(self, image):
         """
-        Advanced preprocessing for various paper sizes and qualities
+        Advanced preprocessing with performance optimizations
         """
-        # Convert to grayscale
+        start_time = time.time()
+        
+        # Convert to grayscale with reduced color depth
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         
-        # Apply multiple preprocessing techniques
-        
-        # 1. Enhanced adaptive thresholding
+        # Fast adaptive thresholding
         thresh = cv2.adaptiveThreshold(
             gray, 
             255, 
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.ADAPTIVE_THRESH_MEAN_C, 
             cv2.THRESH_BINARY_INV, 
             11, 
             2
         )
         
-        # 2. Noise reduction
+        # Quick noise reduction
         denoised = cv2.fastNlMeansDenoising(thresh, None, 10, 7, 21)
+        
+        processing_time = time.time() - start_time
+        logger.info(f"Image preprocessing time: {processing_time:.4f} seconds")
         
         return denoised
 
-    def detect_document_edges(self, image):
+    def extract_text(self, image, timeout=10):
         """
-        Advanced document edge detection for multiple paper sizes
+        Optimized text extraction with multiple strategies and timeout
         """
-        # Find contours with multiple strategies
-        contours, _ = cv2.findContours(
-            image, 
-            cv2.RETR_EXTERNAL, 
-            cv2.CHAIN_APPROX_SIMPLE
-        )
+        start_time = time.time()
         
-        # Sort contours by area, largest first
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)
-        
-        # Filter and approximate contours
-        for contour in contours:
-            perimeter = cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, 0.02 * perimeter, True)
-            
-            # Look for quadrilateral shape (document)
-            if len(approx) == 4:
-                return approx
-        
-        return None
-
-    def perspective_transform(self, original, edges):
-        """
-        Perspective transform supporting various paper sizes
-        """
-        # Flatten and order points
-        pts = edges.reshape(4, 2)
-        rect = np.zeros((4, 2), dtype="float32")
-        
-        # Top-left will have smallest sum, bottom-right largest
-        s = pts.sum(axis=1)
-        rect[0] = pts[np.argmin(s)]
-        rect[2] = pts[np.argmax(s)]
-        
-        # Top-right smallest difference, bottom-left largest
-        diff = np.diff(pts, axis=1)
-        rect[1] = pts[np.argmin(diff)]
-        rect[3] = pts[np.argmax(diff)]
-        
-        # Compute width and height dynamically
-        (tl, tr, br, bl) = rect
-        widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
-        widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
-        maxWidth = max(int(widthA), int(widthB))
-        
-        heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
-        heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
-        maxHeight = max(int(heightA), int(heightB))
-        
-        # Define destination points
-        dst = np.array([ 
-            [0, 0],
-            [maxWidth - 1, 0],
-            [maxWidth - 1, maxHeight - 1],
-            [0, maxHeight - 1]], dtype="float32")
-        
-        # Compute perspective transform
-        M = cv2.getPerspectiveTransform(rect, dst)
-        warped = cv2.warpPerspective(original, M, (maxWidth, maxHeight))
-        
-        return warped
-
-    def extract_text(self, image):
-        """
-        Advanced text extraction supporting multiple formats
-        """
-        # Multiple OCR strategies
         try:
-            # Try EasyOCR first
-            results = self.reader.readtext(image)
+            # Try EasyOCR first with timeout
+            results = self.reader.readtext(image, timeout=timeout)
             text = ' '.join([result[1] for result in results])
             
-            # If no text, fallback to Tesseract
+            # Fallback to Tesseract if EasyOCR fails
             if not text.strip():
                 text = pytesseract.image_to_string(image)
             
+            extraction_time = time.time() - start_time
+            logger.info(f"Text extraction time: {extraction_time:.4f} seconds")
+            
             return text
         except Exception as e:
-            # Final fallback
-            return pytesseract.image_to_string(image)
+            logger.error(f"Text extraction error: {e}")
+            return "Could not extract text"
 
     def process_document(self, image_path):
         """
-        Comprehensive document processing
+        Comprehensive document processing with caching and optimization
         """
+        # Check cache first
+        if image_path in self.cache:
+            logger.info("Returning cached result")
+            return self.cache[image_path]
+        
+        # Compress image
+        compressed_path = self.compress_image(image_path)
+        
         # Read image
-        original = cv2.imread(image_path)
+        original = cv2.imread(compressed_path)
         
         # Preprocess
         preprocessed = self.preprocess_image(original)
         
-        # Detect edges
-        edges = self.detect_document_edges(preprocessed)
+        # Extract text
+        text = self.extract_text(preprocessed)
         
-        if edges is not None:
-            # Transform perspective
-            warped = self.perspective_transform(original, edges)
-            
-            # Extract text
-            text = self.extract_text(warped)
-            
-            return warped, text
+        # Cache result
+        result = (original, text)
+        self._update_cache(image_path, result)
         
-        return original, "No document detected"
+        return result
 
-# Create scanner instance AFTER app is initialized
-scanner = UniversalDocumentScanner()
+    def _update_cache(self, key, value):
+        """
+        Manage cache with size limit
+        """
+        if len(self.cache) >= self.max_cache_size:
+            # Remove oldest item
+            self.cache.pop(next(iter(self.cache)))
+        
+        self.cache[key] = value
 
-# Ensure upload folder exists
-UPLOAD_FOLDER = 'uploads'
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# Create scanner instance
+scanner = OptimizedDocumentScanner()
 
 @app.route('/')
 def index():
@@ -170,41 +151,37 @@ def index():
 @app.route('/scan', methods=['POST'])
 def scan_document():
     try:
-        # Get image from request
         if 'image' not in request.files:
             return jsonify({'error': 'No file uploaded'}), 400
         
         image = request.files['image']
         
-        # Check if filename is empty
         if image.filename == '':
             return jsonify({'error': 'No selected file'}), 400
         
         # Save temporarily
         filename = secure_filename(image.filename)
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        image_path = os.path.join(UPLOAD_FOLDER, filename)
         image.save(image_path)
         
         # Process document
         processed_image, extracted_text = scanner.process_document(image_path)
         
-        # Convert image to base64 for frontend
+        # Convert image to base64
         _, buffer = cv2.imencode('.jpg', processed_image)
         processed_image_base64 = base64.b64encode(buffer).decode('utf-8')
         
-        # Optional: remove temporary file
+        # Optional: remove temporary files
         os.remove(image_path)
         
-        # First return the image, then the text
         return jsonify({
             'image': processed_image_base64,
             'text': extracted_text
         })
     
     except Exception as e:
+        logger.error(f"Scanning error: {e}")
         return jsonify({'error': str(e)}), 400
 
 if __name__ == '__main__':
-    # Ensure uploads and other necessary directories exist
-    os.makedirs('uploads', exist_ok=True)
     app.run(debug=True)
